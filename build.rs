@@ -161,6 +161,7 @@ fn prepare_tensorflow_library() {
         println!("cargo:rustc-link-lib={}={}", static_dynamic, lib_dir);
         println!("cargo:rerun-if-changed={}", lib_dir);
     }
+    println!("cargo:rustc-link-lib=atomic");
     println!("cargo:rustc-link-lib=dylib=pthread");
     println!("cargo:rustc-link-lib=dylib=dl");
 }
