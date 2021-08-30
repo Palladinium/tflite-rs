@@ -160,6 +160,7 @@ fn prepare_tensorflow_library() {
         }
         println!("cargo:rustc-link-search=native={}", out_dir);
         println!("cargo:rustc-link-lib=static=tensorflow-lite{}", binary_changing_features);
+        println!("cargo:rustc-link-lib=atomic");
     }
     #[cfg(not(feature = "build"))]
     {
