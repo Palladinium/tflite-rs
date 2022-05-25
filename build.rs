@@ -24,23 +24,15 @@ fn prepare_tensorflow_source() -> PathBuf {
     let tf_src_dir = out_dir.join("tensorflow/tensorflow");
     let submodules = submodules();
 
-    let mut copy_dir = fs_extra::dir::CopyOptions::new();
-    copy_dir.overwrite = true;
-    copy_dir.buffer_size = 65536;
-
     if !tf_src_dir.exists() {
-        fs_extra::dir::copy(submodules.join("tensorflow"), &out_dir, &copy_dir)
+        copy_dir::copy_dir(submodules.join("tensorflow"), out_dir.join("tensorflow"))
             .expect("Unable to copy tensorflow");
     }
 
     let download_dir = tf_src_dir.join("lite/tools/make/downloads");
     if !download_dir.exists() {
-        fs_extra::dir::copy(
-            submodules.join("downloads"),
-            download_dir.parent().unwrap(),
-            &copy_dir,
-        )
-        .expect("Unable to copy download dir");
+        copy_dir::copy_dir(submodules.join("downloads"), download_dir)
+            .expect("Unable to copy download dir");
     }
 
     println!("Moving source took {:?}", start.elapsed());
@@ -220,6 +212,7 @@ fn import_tflite_types() {
         .opaque_type("std::string")
         .opaque_type("flatbuffers::NativeTable")
         .blacklist_type("std")
+        .opaque_type("std::.*")
         .blacklist_type("tflite::Interpreter_TfLiteDelegatePtr")
         .blacklist_type("tflite::Interpreter_State")
         .default_enum_style(EnumVariation::Rust { non_exhaustive: false })
@@ -269,6 +262,7 @@ fn import_stl_types() {
         .whitelist_type("rust::.+")
         .opaque_type("rust::.+")
         .blacklist_type("std")
+        .opaque_type("std::.*")
         .header("csrc/stl_wrapper.hpp")
         .layout_tests(false)
         .derive_partialeq(true)
