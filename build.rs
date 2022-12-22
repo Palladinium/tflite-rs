@@ -53,6 +53,9 @@ fn binary_changing_features() -> String {
 
 fn prepare_tensorflow_library() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("Unable to get TARGET_ARCH");
+    let os = env::var("CARGO_CFG_TARGET_OS").expect("Unable to get TARGET_OS");
+
+    let need_libatomic = os != "macos";
 
     #[cfg(feature = "build")]
     {
@@ -152,7 +155,10 @@ fn prepare_tensorflow_library() {
         }
         println!("cargo:rustc-link-search=native={}", out_dir);
         println!("cargo:rustc-link-lib=static=tensorflow-lite{}", binary_changing_features);
-        println!("cargo:rustc-link-lib=atomic");
+
+        if need_libatomic {
+            println!("cargo:rustc-link-lib=atomic");
+        }
     }
     #[cfg(not(feature = "build"))]
     {
@@ -171,7 +177,10 @@ fn prepare_tensorflow_library() {
             "dylib"
         };
         println!("cargo:rustc-link-lib={}=tensorflow-lite", static_dynamic);
-        println!("cargo:rustc-link-lib=atomic");
+
+        if need_libatomic {
+            println!("cargo:rustc-link-lib=atomic");
+        }
         println!("cargo:rerun-if-changed={}", lib_dir);
     }
     println!("cargo:rustc-link-lib=dylib=pthread");
