@@ -183,7 +183,7 @@ fn prepare_tensorflow_library() {
         }
         println!("cargo:rerun-if-changed={}", lib_dir);
     }
-    println!("cargo:rustc-link-lib=dylib=pthread");
+    println!("cargo:rustc-link-arg=-pthread");
     println!("cargo:rustc-link-lib=dylib=dl");
 }
 
