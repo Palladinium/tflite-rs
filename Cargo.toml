@@ -49,7 +49,7 @@ thiserror = "1.0.20"
 [build-dependencies]
 bart = { version = "0.1.4", optional = true }
 bart_derive = { version = "0.1.4", optional = true }
-bindgen = "0.64.0"
+bindgen = { version = "0.64.0", default-features = false }
 cpp_build = "0.5.5"
 copy_dir = { version = "0.1.2", optional = true }
 
