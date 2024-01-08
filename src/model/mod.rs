@@ -1,3 +1,6 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(clippy::size_of_ref)]
+
 mod builtin_options;
 mod builtin_options_impl;
 pub mod stl;
@@ -249,7 +252,7 @@ impl Model {
         let buffer = buffer.as_ptr();
         let mut model: UniquePtr<ModelT> = unsafe { mem::zeroed() };
         let model_ref = &mut model;
-        #[allow(deprecated)]
+        #[allow(deprecated, clippy::transmute_num_to_bytes)]
         let r = unsafe {
             cpp!([buffer as "const void*", len as "size_t", model_ref as "std::unique_ptr<ModelT>*"]
                   -> bool as "bool" {
@@ -288,7 +291,7 @@ impl Model {
                 uint8_t* ptr = fbb.GetBufferPointer();
                 size_t size = fbb.GetSize();
                 rust!(ModelT_to_file [ptr: *const u8 as "const uint8_t*", size: size_t as "size_t", buffer_ptr: &mut Vec<u8> as "void*"] {
-                    unsafe { buffer_ptr.extend_from_slice(&slice::from_raw_parts(ptr, size)) };
+                    unsafe { buffer_ptr.extend_from_slice(slice::from_raw_parts(ptr, size)) };
                 });
             })
         }
@@ -459,19 +462,19 @@ mod tests {
             println!("{:?}", subgraph.outputs);
 
             for operator in &subgraph.operators {
-                println!("{:?}", operator);
+                println!("{operator:?}");
             }
 
             for tensor in &subgraph.tensors {
-                println!("{:?}", tensor);
+                println!("{tensor:?}");
             }
 
             for buffer in &model.buffers {
-                println!("{:?}", buffer);
+                println!("{buffer:?}");
             }
 
             for operator_code in &model.operator_codes {
-                println!("{:?}", operator_code);
+                println!("{operator_code:?}");
             }
             model.to_buffer()
         };

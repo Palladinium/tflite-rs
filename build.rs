@@ -24,15 +24,23 @@ fn prepare_tensorflow_source() -> PathBuf {
     let tf_src_dir = out_dir.join("tensorflow/tensorflow");
     let submodules = submodules();
 
+    let mut copy_dir = fs_extra::dir::CopyOptions::new();
+    copy_dir.overwrite = true;
+    copy_dir.buffer_size = 65536;
+
     if !tf_src_dir.exists() {
-        copy_dir::copy_dir(submodules.join("tensorflow"), out_dir.join("tensorflow"))
+        fs_extra::dir::copy(submodules.join("tensorflow"), &out_dir, &copy_dir)
             .expect("Unable to copy tensorflow");
     }
 
     let download_dir = tf_src_dir.join("lite/tools/make/downloads");
     if !download_dir.exists() {
-        copy_dir::copy_dir(submodules.join("downloads"), download_dir)
-            .expect("Unable to copy download dir");
+        fs_extra::dir::copy(
+            submodules.join("downloads"),
+            download_dir.parent().unwrap(),
+            &copy_dir,
+        )
+        .expect("Unable to copy download dir");
     }
 
     println!("Moving source took {:?}", start.elapsed());
@@ -65,15 +73,31 @@ fn prepare_tensorflow_library() {
         // so a cached version that doesn't match expectations isn't used
         let binary_changing_features = binary_changing_features();
         let tf_lib_name =
-            Path::new(&out_dir).join(format!("libtensorflow-lite{}.a", binary_changing_features,));
+            Path::new(&out_dir).join(format!("libtensorflow-lite{binary_changing_features}.a"));
         let os = env::var("CARGO_CFG_TARGET_OS").expect("Unable to get TARGET_OS");
         if !tf_lib_name.exists() {
             println!("Building tflite");
             let start = Instant::now();
             let mut make = std::process::Command::new("make");
             if let Ok(prefix) = env::var("TARGET_TOOLCHAIN_PREFIX") {
-                make.arg(format!("TARGET_TOOLCHAIN_PREFIX={}", prefix));
-            };
+                make.arg(format!("TARGET_TOOLCHAIN_PREFIX={prefix}"));
+            } else {
+                let target_triple = env::var("TARGET").unwrap();
+                let host_triple = env::var("HOST").unwrap();
+                let kind = if host_triple == target_triple { "HOST" } else { "TARGET" };
+                let target_u = target_triple.replace('-', "_");
+                for name in ["CC", "CXX", "AR", "CFLAGS", "CXXFLAGS", "ARFLAGS"] {
+                    if let Ok(value) = env::var(&format!("{name}_{target_triple}"))
+                        .or_else(|_| env::var(format!("{name}_{target_u}")))
+                        .or_else(|_| env::var(format!("{kind}_{name}")))
+                        .or_else(|_| env::var(name))
+                    {
+                        make.arg(format!("{name}={value}"));
+                        println!("inherited: {name}={value}")
+                    }
+                }
+            }
+
             // Use cargo's cross-compilation information while building tensorflow
             // Now that tensorflow has an aarch64_makefile.inc use theirs
             let target = if &arch == "aarch64" { &arch } else { &os };
@@ -93,38 +117,43 @@ fn prepare_tensorflow_library() {
 
             let make_dir = tflite.parent().unwrap();
 
-            make.arg("-j")
-                // allow parallelism to be overridden
-                .arg(
-                    env::var("TFLITE_RS_MAKE_PARALLELISM").unwrap_or_else(|_| {
-                        env::var("NUM_JOBS").unwrap_or_else(|_| "1".to_string())
-                    }),
-                )
-                .arg("BUILD_WITH_NNAPI=false")
-                .arg("-f")
-                .arg("tensorflow/lite/tools/make/Makefile");
+            // allow parallelism to be overridden...
+            let num_jobs = env::var("TFLITE_RS_MAKE_PARALLELISM").ok().or_else(|| {
+                // but prefer jobserver if not explicitly given
+                if !env::var("MAKEFLAGS").unwrap_or_default().contains("--jobserver") {
+                    env::var("NUM_JOBS").ok()
+                } else {
+                    None
+                }
+            });
+            if let Some(num_jobs) = num_jobs {
+                make.arg("-j").arg(num_jobs);
+            }
+
+            make.arg("BUILD_WITH_NNAPI=false").arg("-f").arg("tensorflow/lite/tools/make/Makefile");
 
             for (make_var, default) in &[
                 ("TARGET", Some(target.as_str())),
                 ("TARGET_ARCH", Some(arch.as_str())),
                 ("TARGET_TOOLCHAIN_PREFIX", None),
                 ("EXTRA_CFLAGS", None),
+                ("EXTRA_CXXFLAGS", None),
             ] {
-                let env_var = format!("TFLITE_RS_MAKE_{}", make_var);
-                println!("cargo:rerun-if-env-changed={}", env_var);
+                let env_var = format!("TFLITE_RS_MAKE_{make_var}");
+                println!("cargo:rerun-if-env-changed={env_var}");
 
                 match env::var(&env_var) {
                     Ok(result) => {
-                        make.arg(format!("{}={}", make_var, result));
+                        make.arg(format!("{make_var}={result}"));
                     }
                     Err(VarError::NotPresent) => {
                         // Try and set some reasonable default values
                         if let Some(result) = default {
-                            make.arg(format!("{}={}", make_var, result));
+                            make.arg(format!("{make_var}={result}"));
                         }
                     }
                     Err(VarError::NotUnicode(_)) => {
-                        panic!("Provided a non-unicode value for {}", env_var)
+                        panic!("Provided a non-unicode value for {env_var}")
                     }
                 }
             }
@@ -136,7 +165,7 @@ fn prepare_tensorflow_library() {
                 make.arg("micro");
             }
             make.current_dir(make_dir);
-            eprintln!("make command = {:?} in dir  {:?}", make, make_dir);
+            eprintln!("make command = {make:?} in dir  {make_dir:?}");
             if !make.status().expect("failed to run make command").success() {
                 panic!("Failed to build tensorflow");
             }
@@ -147,14 +176,14 @@ fn prepare_tensorflow_library() {
                 .filter_map(|de| Some(de.ok()?.path().join("lib/libtensorflow-lite.a")))
                 .find(|p| p.exists())
                 .expect("Unable to find libtensorflow-lite.a");
-            std::fs::copy(&library, &tf_lib_name).unwrap_or_else(|_| {
-                panic!(format!("Unable to copy libtensorflow-lite.a to {}", tf_lib_name.display()))
+            std::fs::copy(library, &tf_lib_name).unwrap_or_else(|_| {
+                panic!("Unable to copy libtensorflow-lite.a to {}", tf_lib_name.display())
             });
 
             println!("Building tflite from source took {:?}", start.elapsed());
         }
-        println!("cargo:rustc-link-search=native={}", out_dir);
-        println!("cargo:rustc-link-lib=static=tensorflow-lite{}", binary_changing_features);
+        println!("cargo:rustc-link-search=native={out_dir}");
+        println!("cargo:rustc-link-lib=static=tensorflow-lite{binary_changing_features}");
 
         if need_libatomic {
             println!("cargo:rustc-link-lib=atomic");
@@ -228,13 +257,13 @@ fn import_tflite_types() {
         .derive_partialeq(true)
         .derive_eq(true)
         .header("csrc/tflite_wrapper.hpp")
-        .clang_arg(format!("-I{}/tensorflow", submodules_str))
-        .clang_arg(format!("-I{}/downloads/flatbuffers/include", submodules_str))
+        .clang_arg(format!("-I{submodules_str}/tensorflow"))
+        .clang_arg(format!("-I{submodules_str}/downloads/flatbuffers/include"))
         .clang_arg("-DGEMMLOWP_ALLOW_SLOW_SCALAR_FALLBACK")
         .clang_arg("-DFLATBUFFERS_POLYMORPHIC_NATIVETABLE")
         .clang_arg("-x")
         .clang_arg("c++")
-        .clang_arg("-std=c++11")
+        .clang_arg("-std=c++14")
         // required to get cross compilation for aarch64 to work because of an issue in flatbuffers
         .clang_arg("-fms-extensions");
 
@@ -280,7 +309,7 @@ fn import_stl_types() {
         .clang_arg("c++")
         .clang_arg("-std=c++14")
         .clang_arg("-fms-extensions")
-        .rustfmt_bindings(false)
+        .formatter(Formatter::Rustfmt)
         .generate()
         .expect("Unable to generate STL bindings");
 
@@ -296,6 +325,7 @@ fn generate_memory_impl() -> Result<(), Box<dyn std::error::Error>> {
     writeln!(
         &mut file,
         r#"
+#![allow(clippy::transmute_num_to_bytes)]
 use std::{{fmt, mem}};
 use std::ops::{{Deref, DerefMut}};
 
@@ -334,6 +364,7 @@ fn generate_vector_impl() -> Result<(), Box<dyn std::error::Error>> {
     writeln!(
         &mut file,
         r#"
+#![allow(clippy::transmute_num_to_bytes)]
 use std::{{fmt, mem, slice}};
 use std::ops::{{Deref, DerefMut, Index, IndexMut}};
 
