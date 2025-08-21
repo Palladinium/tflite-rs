@@ -45,6 +45,19 @@ fn prepare_tensorflow_source() -> PathBuf {
 
     println!("Moving source took {:?}", start.elapsed());
 
+    println!("Patching source");
+
+    let mut patch = std::process::Command::new("patch");
+
+    patch
+        .arg("-u")
+        .arg(tf_src_dir.join("lite/kernels/internal/spectrogram.cc"))
+        .arg(manifest_dir().join("spectrogram.patch"));
+
+    if !patch.status().expect("failed to run make command").success() {
+        panic!("Failed to patch tensorflow");
+    }
+
     tf_src_dir
 }
 
