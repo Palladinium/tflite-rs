@@ -16,6 +16,7 @@ include = [
   "build.rs",
   "Cargo.toml",
   "*.md",
+  "*.patch",
   "LICENSE-*",
   "data/",
   "csrc/",
