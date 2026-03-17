@@ -45,19 +45,6 @@ fn prepare_tensorflow_source() -> PathBuf {
 
     println!("Moving source took {:?}", start.elapsed());
 
-    println!("Patching source");
-
-    let mut patch = std::process::Command::new("patch");
-
-    patch
-        .arg("-u")
-        .arg(tf_src_dir.join("lite/kernels/internal/spectrogram.cc"))
-        .arg(manifest_dir().join("spectrogram.patch"));
-
-    if !patch.status().expect("failed to run make command").success() {
-        panic!("Failed to patch tensorflow");
-    }
-
     tf_src_dir
 }
 
@@ -260,6 +247,14 @@ fn import_tflite_types() {
         .allowlist_type("tflite::OpResolver")
         .opaque_type("tflite::OpResolver")
         .allowlist_type("TfLiteTensor")
+        .allowlist_type("TfLiteStatus")
+        .allowlist_type("tflite::TensorType")
+        .allowlist_type("tflite::QuantizationDetails")
+        .allowlist_type("tflite::BuiltinOptions")
+        .allowlist_type("flatbuffers::NativeTable")
+        .opaque_type("flatbuffers::NativeTable")
+        .allowlist_type("tflite::BuiltinOperator")
+        .allowlist_type("tflite::CustomOptionsFormat")
         .opaque_type("std::string")
         .opaque_type("flatbuffers::NativeTable")
         .blocklist_type("std")
